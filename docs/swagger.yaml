@@ -1,0 +1,711 @@
+basePath: /api
+definitions:
+  dto.CommentRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  dto.CommentResponse:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      user_id:
+        type: integer
+      username:
+        type: string
+    type: object
+  dto.LikeResponse:
+    properties:
+      liked:
+        type: boolean
+      podcast_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  dto.LoginRequest:
+    properties:
+      emailOrUsername:
+        type: string
+      password:
+        type: string
+    required:
+    - emailOrUsername
+    - password
+    type: object
+  dto.PodcastCursor:
+    properties:
+      has_next:
+        type: boolean
+      has_previous:
+        type: boolean
+      next_cursor:
+        type: integer
+      podcasts:
+        items:
+          $ref: '#/definitions/dto.PodcastResponse'
+        type: array
+      prev_cursor:
+        type: integer
+    type: object
+  dto.PodcastResponse:
+    properties:
+      audio_url:
+        type: string
+      category:
+        type: string
+      cover_url:
+        type: string
+      id:
+        type: integer
+      title:
+        type: string
+    type: object
+  dto.RegisterRequest:
+    properties:
+      email:
+        type: string
+      first_name:
+        type: string
+      last_name:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      username:
+        type: string
+    required:
+    - email
+    - first_name
+    - last_name
+    - password
+    - username
+    type: object
+  dto.UpdatePodcastRequest:
+    properties:
+      category:
+        type: string
+      title:
+        type: string
+    required:
+    - category
+    - title
+    type: object
+  dto.UserResponse:
+    properties:
+      email:
+        type: string
+      firstname:
+        type: string
+      id:
+        type: integer
+      lastname:
+        type: string
+      username:
+        type: string
+    type: object
+externalDocs:
+  description: OpenAPI
+  url: https://swagger.io/resources/open-api/
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is a sample server celler server.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Swagger Example API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user with email/username and password
+      parameters:
+      - description: Login credentials
+        in: body
+        name: login
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Login user
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidate user's JWT token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Logout user
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account
+      parameters:
+      - description: Registration details
+        in: body
+        name: register
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register new user
+      tags:
+      - auth
+  /podcasts:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a podcast with audio file and metadata
+      parameters:
+      - description: Podcast title
+        in: formData
+        name: title
+        required: true
+        type: string
+      - description: Podcast category
+        in: formData
+        name: category
+        required: true
+        type: string
+      - description: Audio file
+        in: formData
+        name: audio
+        required: true
+        type: file
+      - description: Cover image
+        in: formData
+        name: cover
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.PodcastResponse'
+        "400":
+          description: Hatalı istek
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Upload a podcast
+      tags:
+      - podcast
+  /podcasts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a podcast by ID (only owner can delete)
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Geçersiz podcast ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Yetkisiz erişim
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Podcast bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete a podcast
+      tags:
+      - podcast
+    get:
+      consumes:
+      - application/json
+      description: Retrieve podcast details by ID
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PodcastResponse'
+        "400":
+          description: Geçersiz ID formatı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Podcast bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get podcast by ID
+      tags:
+      - podcast
+    put:
+      consumes:
+      - application/json
+      description: Update podcast title and category
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Podcast update info
+        in: body
+        name: podcast
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePodcastRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PodcastResponse'
+        "400":
+          description: Geçersiz istek
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Yetkisiz erişim
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Podcast bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update a podcast
+      tags:
+      - podcast
+  /podcasts/{id}/comments:
+    get:
+      consumes:
+      - application/json
+      description: Get all comments for a specific podcast
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.CommentResponse'
+            type: array
+        "400":
+          description: Geçersiz podcast ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get podcast comments
+      tags:
+      - podcast
+    post:
+      consumes:
+      - application/json
+      description: Add a new comment to a podcast
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Comment content
+        in: body
+        name: comment
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CommentResponse'
+        "400":
+          description: Geçersiz istek
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add comment to podcast
+      tags:
+      - podcast
+  /podcasts/{id}/cover:
+    put:
+      consumes:
+      - multipart/form-data
+      description: Update cover image of a podcast
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cover image
+        in: formData
+        name: cover
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PodcastResponse'
+        "400":
+          description: Geçersiz istek
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Yetkisiz erişim
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Podcast bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update podcast cover
+      tags:
+      - podcast
+  /podcasts/{id}/like:
+    post:
+      consumes:
+      - application/json
+      description: Like a podcast if not liked, unlike if already liked
+      parameters:
+      - description: Podcast ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.LikeResponse'
+        "400":
+          description: Geçersiz podcast ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: İşlem başarısız
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Like or unlike a podcast
+      tags:
+      - podcast
+  /podcasts/category/{category}:
+    get:
+      consumes:
+      - application/json
+      description: Get all podcasts in a specific category
+      parameters:
+      - description: Category name
+        in: path
+        name: category
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.PodcastResponse'
+            type: array
+        "400":
+          description: Kategori belirtilmedi
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get podcasts by category
+      tags:
+      - podcast
+  /podcasts/discover:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated podcasts for discovery
+      parameters:
+      - description: Cursor for pagination
+        in: query
+        name: cursor
+        type: integer
+      - description: Direction (next/prev)
+        in: query
+        name: direction
+        type: string
+      - description: Number of podcasts per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PodcastCursor'
+        "400":
+          description: Geçersiz istek
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Discover podcasts
+      tags:
+      - podcast
+  /podcasts/liked:
+    get:
+      consumes:
+      - application/json
+      description: Get all podcasts liked by the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.PodcastResponse'
+            type: array
+        "500":
+          description: Sunucu hatası
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get liked podcasts
+      tags:
+      - podcast
+  /users/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get user details by user ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get user by ID
+      tags:
+      - user
+  /users/{user_id}/podcasts:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all podcasts of a specific user
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.PodcastResponse'
+            type: array
+        "400":
+          description: Geçersiz ID formatı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Kullanıcı bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get user's podcasts
+      tags:
+      - podcast
+security:
+- BearerAuth: []
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
