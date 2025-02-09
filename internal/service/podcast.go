@@ -17,50 +17,30 @@ import (
 type PodcastService struct {
 	podcastRepo *repository.PodcastRepository
 	userRepo    *repository.UserRepository
+	r2Service   *R2Service
 }
 
-func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository) *PodcastService {
+func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service) *PodcastService {
 	return &PodcastService{
 		podcastRepo: podcastRepo,
 		userRepo:    userRepo,
+		r2Service:   r2Service,
 	}
 }
 
 func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, audioFile, coverFile *multipart.FileHeader) (*dto.PodcastResponse, error) {
-	// Kaydetme dizinleri
-	currentDir, _ := os.Getwd()
-	audioDir := filepath.Join(currentDir, "uploads", "audio")
-	coverDir := filepath.Join(currentDir, "uploads", "covers")
-
-	// Dizinleri oluştur
-	if err := os.MkdirAll(audioDir, os.ModePerm); err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(coverDir, os.ModePerm); err != nil {
+	// R2'ye yükle
+	audioURL, err := s.r2Service.UploadFile(audioFile, "audio")
+	if err != nil {
 		return nil, err
 	}
 
-	// Ses dosyasını kaydet
-	audioFileName := fmt.Sprintf("%d_%s", time.Now().Unix(), audioFile.Filename)
-	audioPath := filepath.Join(audioDir, audioFileName)
-
-	// Ses dosyasını direkt kaydet
-	if err := saveFile(audioFile, audioPath); err != nil {
+	coverURL, err := s.r2Service.UploadFile(coverFile, "covers")
+	if err != nil {
+		// Hata durumunda audio dosyasını da sil
+		s.r2Service.DeleteFile(audioURL)
 		return nil, err
 	}
-
-	// Kapak fotoğrafını kaydet
-	coverFileName := fmt.Sprintf("%d_%s", time.Now().Unix(), coverFile.Filename)
-	coverPath := filepath.Join(coverDir, coverFileName)
-	if err := saveFile(coverFile, coverPath); err != nil {
-		// Hata durumunda ses dosyasını sil
-		os.Remove(audioPath)
-		return nil, err
-	}
-
-	// URL'leri oluştur - başına / ekle
-	audioURL := fmt.Sprintf("/uploads/audio/%s", audioFileName)
-	coverURL := fmt.Sprintf("/uploads/covers/%s", coverFileName)
 
 	// Podcast modeli oluştur
 	podcast := &model.Podcast{
@@ -74,8 +54,8 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 	// Veritabanına kaydet
 	if err := s.podcastRepo.SavePodcast(podcast); err != nil {
 		// Hata durumunda yüklenen dosyaları sil
-		os.Remove(audioPath)
-		os.Remove(coverPath)
+		s.r2Service.DeleteFile(audioURL)
+		s.r2Service.DeleteFile(coverURL)
 		return nil, err
 	}
 
@@ -83,8 +63,8 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 		ID:       podcast.ID,
 		Title:    podcast.Title,
 		Category: podcast.Category,
-		AudioURL: podcast.AudioURL,
-		CoverURL: podcast.CoverURL,
+		AudioURL: audioURL,
+		CoverURL: coverURL,
 	}, nil
 }
 
@@ -247,6 +227,22 @@ func (s *PodcastService) DeletePodcast(id uint, userID uint) error {
 
 	if podcast.UserID != userID {
 		return errors.New("bu podcast'i silme yetkiniz yok")
+	}
+
+	// Dosyaları sil
+	currentDir, _ := os.Getwd()
+
+	// HLS dizinini sil
+	if podcast.AudioURL != "" {
+		audioPath := filepath.Join(currentDir, strings.TrimPrefix(podcast.AudioURL, "/"))
+		podcastDir := filepath.Dir(audioPath)
+		os.RemoveAll(podcastDir)
+	}
+
+	// Kapak fotoğrafını sil
+	if podcast.CoverURL != "" {
+		coverPath := filepath.Join(currentDir, strings.TrimPrefix(podcast.CoverURL, "/"))
+		os.Remove(coverPath)
 	}
 
 	return s.podcastRepo.DeletePodcast(id)

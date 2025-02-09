@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 )
 
 type Config struct {
@@ -22,9 +21,17 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
+	R2            R2Config
 }
 
-func LoadConfig() *Config {
+type R2Config struct {
+	AccountID       string
+	AccessKeyID     string
+	AccessKeySecret string
+	BucketName      string
+}
+
+func LoadConfig() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("Çevre değişkeni yüklenirken hata oluştu: %s", err)
 	}
@@ -41,7 +48,13 @@ func LoadConfig() *Config {
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
-	}
+		R2: R2Config{
+			AccountID:       os.Getenv("R2_ACCOUNT_ID"),
+			AccessKeyID:     os.Getenv("R2_ACCESS_KEY_ID"),
+			AccessKeySecret: os.Getenv("R2_ACCESS_KEY_SECRET"),
+			BucketName:      os.Getenv("R2_BUCKET_NAME"),
+		},
+	}, nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -59,14 +72,4 @@ func getEnvAsInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return intValue
-}
-
-func ConnectRedis(cfg *Config) *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	return rdb
 }

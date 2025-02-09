@@ -16,7 +16,7 @@ func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
 	uploadPath := filepath.Join(currentDir, "uploads")
 	fmt.Printf("Static dosya yolu: %s\n", uploadPath)
 
-	// Static middleware'i root'a taşıyalım
+	// Static middleware'i sadeleştirelim
 	app.Static("/uploads", uploadPath, fiber.Static{
 		Browse: true,
 	})

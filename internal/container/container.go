@@ -15,19 +15,27 @@ type Container struct {
 	UserHandler    *handler.UserHandler
 	PodcastHandler *handler.PodcastHandler
 	AuthMiddleware *middleware.AuthMiddleware
+	R2Service      *service.R2Service
 }
 
 func NewContainer() *Container {
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Config yüklenemedi: %v", err)
+	}
+
 	db := config.ConnectDB(cfg)
-	redis := config.ConnectRedis(cfg)
+	redis, err := config.ConnectRedis(cfg)
+	if err != nil {
+		log.Fatalf("Redis bağlantısı kurulamadı: %v", err)
+	}
 
 	// Migrasyon işlemlerini burada yapıyoruz
-	err := db.AutoMigrate(
+	err = db.AutoMigrate(
 		&model.User{},
 		&model.Podcast{},
-		&model.Like{},     // Like modelini ekledik
-		&model.Comment{},  // Comment modelini ekledik
+		&model.Like{},    // Like modelini ekledik
+		&model.Comment{}, // Comment modelini ekledik
 	)
 	if err != nil {
 		log.Fatalf("Migrasyon hatası: %v", err)
@@ -42,7 +50,13 @@ func NewContainer() *Container {
 	authHandler := handler.NewAuthHandler(authService)
 
 	podcastRepo := repository.NewPodcastRepository(db)
-	podcastService := service.NewPodcastService(podcastRepo, userRepo)
+	r2Service := service.NewR2Service(
+		cfg.R2.AccountID,
+		cfg.R2.AccessKeyID,
+		cfg.R2.AccessKeySecret,
+		cfg.R2.BucketName,
+	)
+	podcastService := service.NewPodcastService(podcastRepo, userRepo, r2Service)
 	podcastHandler := handler.NewPodcastHandler(podcastService)
 
 	authMiddleware := middleware.NewAuthMiddleware(cfg, authRepo)
@@ -52,5 +66,6 @@ func NewContainer() *Container {
 		UserHandler:    userHandler,
 		PodcastHandler: podcastHandler,
 		AuthMiddleware: authMiddleware,
+		R2Service:      r2Service,
 	}
 }
