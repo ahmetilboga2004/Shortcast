@@ -33,7 +33,11 @@ import (
 func main() {
 	cont := container.NewContainer()
 
-	app := fiber.New()
+	app := fiber.New(
+		fiber.Config{
+			BodyLimit: 100 * 1024 * 1024,
+		},
+	)
 
 	router.SetupAPIRoutes(app, cont)
 	router.SetupDocsRoutes(app)

@@ -23,12 +23,12 @@ func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
 
 	// CORS ayarlarını app seviyesinde yapalım
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "*",
-		AllowMethods:     "GET, POST, PUT, DELETE",
+		AllowOrigins:     "http://localhost:3000, http://localhost:8080",
+		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		ExposeHeaders:    "Content-Length",
-		AllowCredentials: false,
-		MaxAge:           300,
+		AllowCredentials: true,
+		MaxAge:           3000,
 	}))
 
 	// API routes
@@ -55,6 +55,7 @@ func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
 	podcast.Get("/liked", cont.PodcastHandler.GetLikedPodcasts)
 	podcast.Get("/discover", cont.PodcastHandler.DiscoverPodcasts)
 	podcast.Get("/category/:category", cont.PodcastHandler.GetPodcastsByCategory)
+	podcast.Get("/file/*", cont.PodcastHandler.GetFileContent)
 
 	// Sonra parametreli route'ları tanımla
 	podcast.Get("/:id", cont.PodcastHandler.GetPodcastByID)

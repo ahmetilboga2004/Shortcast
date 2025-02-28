@@ -17,28 +17,28 @@ import (
 type PodcastService struct {
 	podcastRepo *repository.PodcastRepository
 	userRepo    *repository.UserRepository
-	r2Service   *R2Service
+	R2Service   *R2Service
 }
 
 func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service) *PodcastService {
 	return &PodcastService{
 		podcastRepo: podcastRepo,
 		userRepo:    userRepo,
-		r2Service:   r2Service,
+		R2Service:   r2Service,
 	}
 }
 
 func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, audioFile, coverFile *multipart.FileHeader) (*dto.PodcastResponse, error) {
 	// R2'ye yükle
-	audioURL, err := s.r2Service.UploadFile(audioFile, "audio")
+	audioURL, err := s.R2Service.UploadFile(audioFile, "audio")
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := s.r2Service.UploadFile(coverFile, "covers")
+	coverURL, err := s.R2Service.UploadFile(coverFile, "covers")
 	if err != nil {
 		// Hata durumunda audio dosyasını da sil
-		s.r2Service.DeleteFile(audioURL)
+		s.R2Service.DeleteFile(audioURL)
 		return nil, err
 	}
 
@@ -54,8 +54,8 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 	// Veritabanına kaydet
 	if err := s.podcastRepo.SavePodcast(podcast); err != nil {
 		// Hata durumunda yüklenen dosyaları sil
-		s.r2Service.DeleteFile(audioURL)
-		s.r2Service.DeleteFile(coverURL)
+		s.R2Service.DeleteFile(audioURL)
+		s.R2Service.DeleteFile(coverURL)
 		return nil, err
 	}
 
@@ -220,32 +220,63 @@ func (s *PodcastService) UpdatePodcast(id uint, userID uint, req *dto.UpdatePodc
 }
 
 func (s *PodcastService) DeletePodcast(id uint, userID uint) error {
+	fmt.Printf("Podcast - Silme işlemi başlatıldı. PodcastID: %d, UserID: %d\n", id, userID)
+
 	podcast, err := s.podcastRepo.GetPodcastByID(id)
 	if err != nil {
+		fmt.Printf("Podcast - HATA: Podcast bulunamadı. PodcastID: %d, Hata: %v\n", id, err)
 		return err
 	}
 
+	fmt.Printf("Podcast - Podcast bulundu. PodcastID: %d, Title: %s\n", podcast.ID, podcast.Title)
+
 	if podcast.UserID != userID {
+		fmt.Printf("Podcast - HATA: Yetkisiz silme denemesi. PodcastID: %d, İsteyen UserID: %d, Sahip UserID: %d\n", id, userID, podcast.UserID)
 		return errors.New("bu podcast'i silme yetkiniz yok")
 	}
 
-	// Dosyaları sil
-	currentDir, _ := os.Getwd()
+	fmt.Printf("Podcast - Yetki kontrolü başarılı. Dosya silme işlemlerine başlanıyor.\n")
 
-	// HLS dizinini sil
+	// Cloudflare R2'den dosyaları sil
 	if podcast.AudioURL != "" {
-		audioPath := filepath.Join(currentDir, strings.TrimPrefix(podcast.AudioURL, "/"))
-		podcastDir := filepath.Dir(audioPath)
-		os.RemoveAll(podcastDir)
+		fmt.Printf("Podcast - Ses dosyası silme işlemi başlatıldı. URL: %s\n", podcast.AudioURL)
+		// URL'den key'i çıkar
+		audioKey := strings.TrimPrefix(podcast.AudioURL, fmt.Sprintf("https://%s.r2.cloudflarestorage.com/", s.R2Service.bucketName))
+		fmt.Printf("Podcast - Ses dosyası için R2 key oluşturuldu: %s\n", audioKey)
+
+		if err := s.R2Service.DeleteFile(audioKey); err != nil {
+			fmt.Printf("Podcast - HATA: Ses dosyası R2'den silinirken hata oluştu: %v\n", err)
+			return fmt.Errorf("ses dosyası silinirken hata oluştu: %v", err)
+		}
+		fmt.Printf("Podcast - Ses dosyası R2'den başarıyla silindi.\n")
+	} else {
+		fmt.Printf("Podcast - Ses dosyası URL'i boş, silme işlemi atlanıyor.\n")
 	}
 
-	// Kapak fotoğrafını sil
 	if podcast.CoverURL != "" {
-		coverPath := filepath.Join(currentDir, strings.TrimPrefix(podcast.CoverURL, "/"))
-		os.Remove(coverPath)
+		fmt.Printf("Podcast - Kapak fotoğrafı silme işlemi başlatıldı. URL: %s\n", podcast.CoverURL)
+		// URL'den key'i çıkar
+		coverKey := strings.TrimPrefix(podcast.CoverURL, fmt.Sprintf("https://%s.r2.cloudflarestorage.com/", s.R2Service.bucketName))
+		fmt.Printf("Podcast - Kapak fotoğrafı için R2 key oluşturuldu: %s\n", coverKey)
+
+		if err := s.R2Service.DeleteFile(coverKey); err != nil {
+			fmt.Printf("Podcast - HATA: Kapak fotoğrafı R2'den silinirken hata oluştu: %v\n", err)
+			return fmt.Errorf("kapak fotoğrafı silinirken hata oluştu: %v", err)
+		}
+		fmt.Printf("Podcast - Kapak fotoğrafı R2'den başarıyla silindi.\n")
+	} else {
+		fmt.Printf("Podcast - Kapak fotoğrafı URL'i boş, silme işlemi atlanıyor.\n")
 	}
 
-	return s.podcastRepo.DeletePodcast(id)
+	fmt.Printf("Podcast - Veritabanından silme işlemi başlatılıyor. PodcastID: %d\n", id)
+	err = s.podcastRepo.DeletePodcast(id)
+	if err != nil {
+		fmt.Printf("Podcast - HATA: Veritabanından silinirken hata oluştu: %v\n", err)
+		return err
+	}
+
+	fmt.Printf("Podcast - Silme işlemi başarıyla tamamlandı. PodcastID: %d\n", id)
+	return nil
 }
 
 func (s *PodcastService) LikePodcast(podcastID, userID uint) (*dto.LikeResponse, error) {

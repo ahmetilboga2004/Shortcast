@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/url"
 	"shortcast/internal/dto"
 	"shortcast/internal/service"
@@ -549,4 +550,49 @@ func (h *PodcastHandler) UpdatePodcastCover(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(podcastResponse)
+}
+
+// GetFileContent godoc
+// @Summary      Get file content from R2
+// @Description  Get file content directly from R2 storage
+// @Tags         podcast
+// @Accept       json
+// @Produce      octet-stream
+// @Param        key   path      string  true  "File key"
+// @Success      200  {file}    binary
+// @Failure      400  {object}  map[string]string  "Geçersiz key"
+// @Failure      404  {object}  map[string]string  "Dosya bulunamadı"
+// @Router       /podcasts/file/{key} [get]
+func (h *PodcastHandler) GetFileContent(c *fiber.Ctx) error {
+	key := c.Params("*") // wildcard parametresini al
+	if key == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Dosya anahtarı gerekli",
+		})
+	}
+
+	// Dosya içeriğini al
+	content, err := h.podcastService.R2Service.GetFile(key)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Dosya bulunamadı",
+		})
+	}
+
+	// Content-Type'ı belirle
+	contentType := "application/octet-stream"
+	if strings.HasSuffix(strings.ToLower(key), ".mp3") {
+		contentType = "audio/mpeg"
+	} else if strings.HasSuffix(strings.ToLower(key), ".jpg") || strings.HasSuffix(strings.ToLower(key), ".jpeg") {
+		contentType = "image/jpeg"
+	} else if strings.HasSuffix(strings.ToLower(key), ".png") {
+		contentType = "image/png"
+	}
+
+	// Dosya adını al
+	fileName := key[strings.LastIndex(key, "/")+1:]
+
+	c.Set("Content-Type", contentType)
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
+	return c.Send(content)
 }
