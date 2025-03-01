@@ -66,6 +66,8 @@ definitions:
         type: integer
       title:
         type: string
+      user:
+        $ref: '#/definitions/dto.UserDTO'
     type: object
   dto.RegisterRequest:
     properties:
@@ -96,6 +98,17 @@ definitions:
     required:
     - category
     - title
+    type: object
+  dto.UserDTO:
+    properties:
+      first_name:
+        type: string
+      id:
+        type: integer
+      last_name:
+        type: string
+      username:
+        type: string
     type: object
   dto.UserResponse:
     properties:

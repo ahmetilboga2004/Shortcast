@@ -22,7 +22,7 @@ func (r *PodcastRepository) SavePodcast(podcast *model.Podcast) error {
 
 func (r *PodcastRepository) GetPodcastByID(id uint) (*model.Podcast, error) {
 	var podcast model.Podcast
-	if err := r.db.First(&podcast, id).Error; err != nil {
+	if err := r.db.Preload("User").First(&podcast, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.New("podcast bulunamadı")
 		}
@@ -34,7 +34,7 @@ func (r *PodcastRepository) GetPodcastByID(id uint) (*model.Podcast, error) {
 
 func (r *PodcastRepository) GetPodcastsByUserID(userId uint) (*[]model.Podcast, error) {
 	var podcasts []model.Podcast
-	err := r.db.Where("user_id = ?", userId).Find(&podcasts).Error
+	err := r.db.Preload("User").Where("user_id = ?", userId).Find(&podcasts).Error
 	if err != nil {
 		return nil, fmt.Errorf("veritabanından podcastler alınırken hata: %v", err)
 	}
@@ -48,7 +48,7 @@ func (r *PodcastRepository) GetPodcastsByUserID(userId uint) (*[]model.Podcast, 
 
 func (r *PodcastRepository) DiscoverPodcasts(cursor *uint, direction string, limit int) (*[]model.Podcast, error) {
 	var podcasts []model.Podcast
-	query := r.db.Model(&model.Podcast{})
+	query := r.db.Model(&model.Podcast{}).Preload("User")
 
 	if cursor != nil {
 		if direction == "next" {
@@ -123,22 +123,17 @@ func (r *PodcastRepository) LikePodcast(podcastID, userID uint) (bool, error) {
 
 func (r *PodcastRepository) GetLikedPodcasts(userID uint) (*[]model.Podcast, error) {
 	var podcasts []model.Podcast
-	err := r.db.Joins("JOIN likes ON likes.podcast_id = podcasts.id").
+	err := r.db.Preload("User").
+		Joins("JOIN likes ON likes.podcast_id = podcasts.id").
 		Where("likes.user_id = ? AND likes.deleted_at IS NULL", userID).
 		Find(&podcasts).Error
-	if err != nil {
-		return nil, err
-	}
-	return &podcasts, nil
+	return &podcasts, err
 }
 
 func (r *PodcastRepository) GetPodcastsByCategory(category string) (*[]model.Podcast, error) {
 	var podcasts []model.Podcast
-	err := r.db.Where("LOWER(category) = LOWER(?)", category).Find(&podcasts).Error
-	if err != nil {
-		return nil, err
-	}
-	return &podcasts, nil
+	err := r.db.Preload("User").Where("category = ?", category).Find(&podcasts).Error
+	return &podcasts, err
 }
 
 func (r *PodcastRepository) AddComment(comment *model.Comment) error {

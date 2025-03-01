@@ -11,11 +11,12 @@ type UploadPodcastRequest struct {
 }
 
 type PodcastResponse struct {
-	ID       uint   `json:"id"`
-	Title    string `json:"title"`
-	Category string `json:"category"`
-	AudioURL string `json:"audio_url"`
-	CoverURL string `json:"cover_url"`
+	ID       uint    `json:"id"`
+	Title    string  `json:"title"`
+	Category string  `json:"category"`
+	AudioURL string  `json:"audio_url"`
+	CoverURL string  `json:"cover_url"`
+	User     UserDTO `json:"user"`
 }
 
 type PodcastCursor struct {

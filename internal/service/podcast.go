@@ -113,6 +113,12 @@ func (s *PodcastService) GetPodcastByID(id uint) (*dto.PodcastResponse, error) {
 		Category: podcast.Category,
 		AudioURL: audioURL,
 		CoverURL: coverURL,
+		User: dto.UserDTO{
+			ID:        podcast.User.ID,
+			FirstName: podcast.User.FirstName,
+			LastName:  podcast.User.LastName,
+			Username:  podcast.User.Username,
+		},
 	}, nil
 }
 
@@ -136,6 +142,12 @@ func (s *PodcastService) GetUserPodcasts(userID uint) ([]dto.PodcastResponse, er
 			Category: podcast.Category,
 			AudioURL: audioURL,
 			CoverURL: podcast.CoverURL,
+			User: dto.UserDTO{
+				ID:        podcast.User.ID,
+				FirstName: podcast.User.FirstName,
+				LastName:  podcast.User.LastName,
+				Username:  podcast.User.Username,
+			},
 		})
 	}
 	return response, nil
@@ -171,6 +183,12 @@ func (s *PodcastService) DiscoverPodcasts(req *dto.PodcastDiscoverRequest) (*dto
 			Category: podcast.Category,
 			AudioURL: podcast.AudioURL,
 			CoverURL: podcast.CoverURL,
+			User: dto.UserDTO{
+				ID:        podcast.User.ID,
+				FirstName: podcast.User.FirstName,
+				LastName:  podcast.User.LastName,
+				Username:  podcast.User.Username,
+			},
 		})
 	}
 
@@ -320,6 +338,12 @@ func (s *PodcastService) GetLikedPodcasts(userID uint) ([]dto.PodcastResponse, e
 			Category: podcast.Category,
 			AudioURL: podcast.AudioURL,
 			CoverURL: podcast.CoverURL,
+			User: dto.UserDTO{
+				ID:        podcast.User.ID,
+				FirstName: podcast.User.FirstName,
+				LastName:  podcast.User.LastName,
+				Username:  podcast.User.Username,
+			},
 		})
 	}
 	return response, nil
@@ -339,6 +363,12 @@ func (s *PodcastService) GetPodcastsByCategory(category string) ([]dto.PodcastRe
 			Category: p.Category,
 			AudioURL: p.AudioURL,
 			CoverURL: p.CoverURL,
+			User: dto.UserDTO{
+				ID:        p.User.ID,
+				FirstName: p.User.FirstName,
+				LastName:  p.User.LastName,
+				Username:  p.User.Username,
+			},
 		})
 	}
 	return response, nil
