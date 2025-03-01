@@ -610,6 +610,39 @@ paths:
       summary: Discover podcasts
       tags:
       - podcast
+  /podcasts/file/{key}:
+    get:
+      consumes:
+      - application/json
+      description: Get file content directly from R2 storage
+      parameters:
+      - description: File key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Geçersiz key
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Dosya bulunamadı
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get file content from R2
+      tags:
+      - podcast
   /podcasts/liked:
     get:
       consumes:
