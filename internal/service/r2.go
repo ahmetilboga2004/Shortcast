@@ -16,6 +16,7 @@ import (
 type R2Service struct {
 	client     *s3.Client
 	bucketName string
+	accountID  string
 }
 
 func NewR2Service(accountID, accessKeyID, accessKeySecret string, bucketName string) *R2Service {
@@ -29,6 +30,7 @@ func NewR2Service(accountID, accessKeyID, accessKeySecret string, bucketName str
 	return &R2Service{
 		client:     client,
 		bucketName: bucketName,
+		accountID:  accountID,
 	}
 }
 
@@ -58,7 +60,7 @@ func (s *R2Service) UploadFile(file *multipart.FileHeader, folder string) (strin
 		return "", err
 	}
 
-	publicURL := fmt.Sprintf("https://%s.r2.cloudflarestorage.com/%s", s.bucketName, key)
+	publicURL := fmt.Sprintf("https://%s.r2.cloudflarestorage.com/%s", s.accountID, key)
 	fmt.Printf("R2 - Dosya başarıyla yüklendi. Public URL: %s\n", publicURL)
 	return publicURL, nil
 }
@@ -71,15 +73,36 @@ func (s *R2Service) DeleteFile(key string) error {
 		return fmt.Errorf("dosya key'i boş olamaz")
 	}
 
+	// URL'den key'i çıkar
+	if strings.Contains(key, "r2.cloudflarestorage.com") {
+		parts := strings.Split(key, "r2.cloudflarestorage.com/")
+		if len(parts) > 1 {
+			key = parts[1]
+		}
+	}
+
+	fmt.Printf("R2 - İşlenecek key: %s\n", key)
+
+	// Önce dosyanın var olup olmadığını kontrol et
+	_, err := s.client.HeadObject(context.TODO(), &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(key),
+	})
+
+	if err != nil {
+		fmt.Printf("R2 - HATA: Dosya bulunamadı veya erişilemedi. Key: %s, Hata: %v\n", key, err)
+		return fmt.Errorf("dosya bulunamadı veya erişilemedi: %v", err)
+	}
+
 	fmt.Printf("R2 - DeleteObject çağrısı yapılıyor. Bucket: %s, Key: %s\n", s.bucketName, key)
-	_, err := s.client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+	_, err = s.client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(key),
 	})
 
 	if err != nil {
 		fmt.Printf("R2 - HATA: Dosya silinirken hata oluştu. Key: %s, Hata: %v\n", key, err)
-		return err
+		return fmt.Errorf("dosya silinirken hata oluştu: %v", err)
 	}
 
 	fmt.Printf("R2 - Dosya başarıyla silindi. Key: %s\n", key)

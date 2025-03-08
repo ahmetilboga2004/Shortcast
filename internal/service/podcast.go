@@ -29,6 +29,12 @@ func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repo
 }
 
 func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, audioFile, coverFile *multipart.FileHeader) (*dto.PodcastResponse, error) {
+	// Kullanıcı bilgilerini al
+	user, err := s.userRepo.GetUserByID(podcastDTO.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("kullanıcı bulunamadı: %v", err)
+	}
+
 	// R2'ye yükle
 	audioURL, err := s.R2Service.UploadFile(audioFile, "audio")
 	if err != nil {
@@ -65,6 +71,12 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 		Category: podcast.Category,
 		AudioURL: audioURL,
 		CoverURL: coverURL,
+		User: dto.UserDTO{
+			ID:        user.ID,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			Username:  user.Username,
+		},
 	}, nil
 }
 
@@ -258,11 +270,7 @@ func (s *PodcastService) DeletePodcast(id uint, userID uint) error {
 	// Cloudflare R2'den dosyaları sil
 	if podcast.AudioURL != "" {
 		fmt.Printf("Podcast - Ses dosyası silme işlemi başlatıldı. URL: %s\n", podcast.AudioURL)
-		// URL'den key'i çıkar
-		audioKey := strings.TrimPrefix(podcast.AudioURL, fmt.Sprintf("https://%s.r2.cloudflarestorage.com/", s.R2Service.bucketName))
-		fmt.Printf("Podcast - Ses dosyası için R2 key oluşturuldu: %s\n", audioKey)
-
-		if err := s.R2Service.DeleteFile(audioKey); err != nil {
+		if err := s.R2Service.DeleteFile(podcast.AudioURL); err != nil {
 			fmt.Printf("Podcast - HATA: Ses dosyası R2'den silinirken hata oluştu: %v\n", err)
 			return fmt.Errorf("ses dosyası silinirken hata oluştu: %v", err)
 		}
@@ -273,11 +281,7 @@ func (s *PodcastService) DeletePodcast(id uint, userID uint) error {
 
 	if podcast.CoverURL != "" {
 		fmt.Printf("Podcast - Kapak fotoğrafı silme işlemi başlatıldı. URL: %s\n", podcast.CoverURL)
-		// URL'den key'i çıkar
-		coverKey := strings.TrimPrefix(podcast.CoverURL, fmt.Sprintf("https://%s.r2.cloudflarestorage.com/", s.R2Service.bucketName))
-		fmt.Printf("Podcast - Kapak fotoğrafı için R2 key oluşturuldu: %s\n", coverKey)
-
-		if err := s.R2Service.DeleteFile(coverKey); err != nil {
+		if err := s.R2Service.DeleteFile(podcast.CoverURL); err != nil {
 			fmt.Printf("Podcast - HATA: Kapak fotoğrafı R2'den silinirken hata oluştu: %v\n", err)
 			return fmt.Errorf("kapak fotoğrafı silinirken hata oluştu: %v", err)
 		}

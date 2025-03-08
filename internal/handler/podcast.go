@@ -44,9 +44,12 @@ func (h *PodcastHandler) UploadPodcast(c *fiber.Ctx) error {
 
 	// Form verilerini parse et
 	var podcastDTO dto.UploadPodcastRequest
-	if err := c.BodyParser(&podcastDTO); err != nil {
+	podcastDTO.Title = c.FormValue("title")
+	podcastDTO.Category = c.FormValue("category")
+
+	if podcastDTO.Title == "" || podcastDTO.Category == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Geçersiz form verisi",
+			"error": "Başlık ve kategori alanları zorunludur",
 		})
 	}
 
