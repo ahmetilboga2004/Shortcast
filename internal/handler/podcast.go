@@ -208,7 +208,6 @@ func (h *PodcastHandler) DiscoverPodcasts(c *fiber.Ctx) error {
 	if result.Podcasts == nil {
 		result.Podcasts = []dto.PodcastResponse{}
 	}
-
 	return c.JSON(result)
 }
 

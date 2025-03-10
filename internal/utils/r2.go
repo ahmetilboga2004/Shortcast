@@ -31,6 +31,7 @@ func InitR2Client(cfg *config.Config) {
 		BaseEndpoint: aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", cfg.R2.AccountID)),
 		Region:       "auto",
 		Credentials:  r2Config.Credentials,
+		UsePathStyle: true,
 	})
 }
 

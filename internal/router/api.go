@@ -23,7 +23,7 @@ func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
 
 	// CORS ayarlarını app seviyesinde yapalım
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000, http://localhost:8080",
+		AllowOrigins:     "http://localhost:3000, http://localhost:8080, http://localhost:50270",
 		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		ExposeHeaders:    "Content-Length",
