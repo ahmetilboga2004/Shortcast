@@ -34,6 +34,7 @@ func NewR2Service(accountID, accessKeyID, accessKeySecret string, bucketName str
 	}
 }
 
+// UploadFile dosyayı R2'ye yükler ve dosya anahtarını (key) döndürür
 func (s *R2Service) UploadFile(file *multipart.FileHeader, folder string) (string, error) {
 	src, err := file.Open()
 	if err != nil {
@@ -60,9 +61,8 @@ func (s *R2Service) UploadFile(file *multipart.FileHeader, folder string) (strin
 		return "", err
 	}
 
-	publicURL := fmt.Sprintf("https://%s.r2.cloudflarestorage.com/%s", s.accountID, key)
-	fmt.Printf("R2 - Dosya başarıyla yüklendi. Public URL: %s\n", publicURL)
-	return publicURL, nil
+	fmt.Printf("R2 - Dosya başarıyla yüklendi. Key: %s\n", key)
+	return key, nil
 }
 
 func (s *R2Service) DeleteFile(key string) error {

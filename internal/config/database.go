@@ -18,7 +18,6 @@ func ConnectDB(cfg *Config) *gorm.DB {
 	if err != nil {
 		log.Fatalf("Veritabanına bağlanırken bir hata oluştu: %v", err)
 	}
-
 	db.AutoMigrate(&model.User{}, &model.Podcast{})
 
 	return db

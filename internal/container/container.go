@@ -56,7 +56,7 @@ func NewContainer() *Container {
 		cfg.R2.AccessKeySecret,
 		cfg.R2.BucketName,
 	)
-	podcastService := service.NewPodcastService(podcastRepo, userRepo, r2Service)
+	podcastService := service.NewPodcastService(podcastRepo, userRepo, r2Service, cfg)
 	podcastHandler := handler.NewPodcastHandler(podcastService)
 
 	authMiddleware := middleware.NewAuthMiddleware(cfg, authRepo)

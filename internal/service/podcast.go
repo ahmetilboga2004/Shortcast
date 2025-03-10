@@ -6,25 +6,26 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
-	"path/filepath"
+	"shortcast/internal/config"
 	"shortcast/internal/dto"
 	"shortcast/internal/model"
 	"shortcast/internal/repository"
-	"strings"
-	"time"
+	"shortcast/internal/utils"
 )
 
 type PodcastService struct {
 	podcastRepo *repository.PodcastRepository
 	userRepo    *repository.UserRepository
 	R2Service   *R2Service
+	config      *config.Config
 }
 
-func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service) *PodcastService {
+func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service, cfg *config.Config) *PodcastService {
 	return &PodcastService{
 		podcastRepo: podcastRepo,
 		userRepo:    userRepo,
 		R2Service:   r2Service,
+		config:      cfg,
 	}
 }
 
@@ -36,15 +37,15 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 	}
 
 	// R2'ye yükle
-	audioURL, err := s.R2Service.UploadFile(audioFile, "audio")
+	audioKey, err := s.R2Service.UploadFile(audioFile, "audio")
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := s.R2Service.UploadFile(coverFile, "covers")
+	coverKey, err := s.R2Service.UploadFile(coverFile, "covers")
 	if err != nil {
 		// Hata durumunda audio dosyasını da sil
-		s.R2Service.DeleteFile(audioURL)
+		s.R2Service.DeleteFile(audioKey)
 		return nil, err
 	}
 
@@ -52,16 +53,27 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 	podcast := &model.Podcast{
 		Title:    podcastDTO.Title,
 		Category: podcastDTO.Category,
-		AudioURL: audioURL,
-		CoverURL: coverURL,
+		AudioKey: audioKey,
+		CoverKey: coverKey,
 		UserID:   podcastDTO.UserID,
 	}
 
 	// Veritabanına kaydet
 	if err := s.podcastRepo.SavePodcast(podcast); err != nil {
 		// Hata durumunda yüklenen dosyaları sil
-		s.R2Service.DeleteFile(audioURL)
-		s.R2Service.DeleteFile(coverURL)
+		s.R2Service.DeleteFile(audioKey)
+		s.R2Service.DeleteFile(coverKey)
+		return nil, err
+	}
+
+	// İmzalı URL'leri oluştur
+	audioURL, err := utils.GenerateSignedURL(audioKey, s.config)
+	if err != nil {
+		return nil, err
+	}
+
+	coverURL, err := utils.GenerateSignedURL(coverKey, s.config)
+	if err != nil {
 		return nil, err
 	}
 
@@ -107,16 +119,15 @@ func (s *PodcastService) GetPodcastByID(id uint) (*dto.PodcastResponse, error) {
 		return nil, err
 	}
 
-	// AudioURL başına / ekle (eğer yoksa)
-	audioURL := podcast.AudioURL
-	if !strings.HasPrefix(audioURL, "/") {
-		audioURL = "/" + audioURL
+	// İmzalı URL'leri oluştur
+	audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
+	if err != nil {
+		return nil, err
 	}
 
-	// CoverURL başına / ekle (eğer yoksa)
-	coverURL := podcast.CoverURL
-	if !strings.HasPrefix(coverURL, "/") {
-		coverURL = "/" + coverURL
+	coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.PodcastResponse{
@@ -142,10 +153,15 @@ func (s *PodcastService) GetUserPodcasts(userID uint) ([]dto.PodcastResponse, er
 
 	response := make([]dto.PodcastResponse, 0)
 	for _, podcast := range *podcasts {
-		// AudioURL başına / ekle (eğer yoksa)
-		audioURL := podcast.AudioURL
-		if !strings.HasPrefix(audioURL, "/") {
-			audioURL = "/" + audioURL
+		// İmzalı URL'leri oluştur
+		audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
+		coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
+		if err != nil {
+			return nil, err
 		}
 
 		response = append(response, dto.PodcastResponse{
@@ -153,7 +169,7 @@ func (s *PodcastService) GetUserPodcasts(userID uint) ([]dto.PodcastResponse, er
 			Title:    podcast.Title,
 			Category: podcast.Category,
 			AudioURL: audioURL,
-			CoverURL: podcast.CoverURL,
+			CoverURL: coverURL,
 			User: dto.UserDTO{
 				ID:        podcast.User.ID,
 				FirstName: podcast.User.FirstName,
@@ -189,12 +205,23 @@ func (s *PodcastService) DiscoverPodcasts(req *dto.PodcastDiscoverRequest) (*dto
 	}
 
 	for _, podcast := range actualPodcasts {
+		// İmzalı URL'leri oluştur
+		audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
+		coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
 		response.Podcasts = append(response.Podcasts, dto.PodcastResponse{
 			ID:       podcast.ID,
 			Title:    podcast.Title,
 			Category: podcast.Category,
-			AudioURL: podcast.AudioURL,
-			CoverURL: podcast.CoverURL,
+			AudioURL: audioURL,
+			CoverURL: coverURL,
 			User: dto.UserDTO{
 				ID:        podcast.User.ID,
 				FirstName: podcast.User.FirstName,
@@ -211,33 +238,35 @@ func (s *PodcastService) DiscoverPodcasts(req *dto.PodcastDiscoverRequest) (*dto
 }
 
 func (s *PodcastService) UpdatePodcast(id uint, userID uint, req *dto.UpdatePodcastRequest) (*dto.PodcastResponse, error) {
+	// Podcast'i bul
 	existingPodcast, err := s.podcastRepo.GetPodcastByID(id)
 	if err != nil {
 		return nil, err
 	}
 
+	// Yetki kontrolü
 	if existingPodcast.UserID != userID {
 		return nil, errors.New("bu podcast'i düzenleme yetkiniz yok")
 	}
 
+	// Güncelleme
 	existingPodcast.Title = req.Title
 	existingPodcast.Category = req.Category
 
-	err = s.podcastRepo.UpdatePodcast(id, existingPodcast)
+	// Veritabanını güncelle
+	if err := s.podcastRepo.UpdatePodcast(id, existingPodcast); err != nil {
+		return nil, err
+	}
+
+	// İmzalı URL'leri oluştur
+	audioURL, err := utils.GenerateSignedURL(existingPodcast.AudioKey, s.config)
 	if err != nil {
 		return nil, err
 	}
 
-	// AudioURL başına / ekle (eğer yoksa)
-	audioURL := existingPodcast.AudioURL
-	if !strings.HasPrefix(audioURL, "/") {
-		audioURL = "/" + audioURL
-	}
-
-	// CoverURL başına / ekle (eğer yoksa)
-	coverURL := existingPodcast.CoverURL
-	if !strings.HasPrefix(coverURL, "/") {
-		coverURL = "/" + coverURL
+	coverURL, err := utils.GenerateSignedURL(existingPodcast.CoverKey, s.config)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.PodcastResponse{
@@ -246,6 +275,12 @@ func (s *PodcastService) UpdatePodcast(id uint, userID uint, req *dto.UpdatePodc
 		Category: existingPodcast.Category,
 		AudioURL: audioURL,
 		CoverURL: coverURL,
+		User: dto.UserDTO{
+			ID:        existingPodcast.User.ID,
+			FirstName: existingPodcast.User.FirstName,
+			LastName:  existingPodcast.User.LastName,
+			Username:  existingPodcast.User.Username,
+		},
 	}, nil
 }
 
@@ -268,26 +303,26 @@ func (s *PodcastService) DeletePodcast(id uint, userID uint) error {
 	fmt.Printf("Podcast - Yetki kontrolü başarılı. Dosya silme işlemlerine başlanıyor.\n")
 
 	// Cloudflare R2'den dosyaları sil
-	if podcast.AudioURL != "" {
-		fmt.Printf("Podcast - Ses dosyası silme işlemi başlatıldı. URL: %s\n", podcast.AudioURL)
-		if err := s.R2Service.DeleteFile(podcast.AudioURL); err != nil {
+	if podcast.AudioKey != "" {
+		fmt.Printf("Podcast - Ses dosyası silme işlemi başlatıldı. Key: %s\n", podcast.AudioKey)
+		if err := s.R2Service.DeleteFile(podcast.AudioKey); err != nil {
 			fmt.Printf("Podcast - HATA: Ses dosyası R2'den silinirken hata oluştu: %v\n", err)
 			return fmt.Errorf("ses dosyası silinirken hata oluştu: %v", err)
 		}
 		fmt.Printf("Podcast - Ses dosyası R2'den başarıyla silindi.\n")
 	} else {
-		fmt.Printf("Podcast - Ses dosyası URL'i boş, silme işlemi atlanıyor.\n")
+		fmt.Printf("Podcast - Ses dosyası Key'i boş, silme işlemi atlanıyor.\n")
 	}
 
-	if podcast.CoverURL != "" {
-		fmt.Printf("Podcast - Kapak fotoğrafı silme işlemi başlatıldı. URL: %s\n", podcast.CoverURL)
-		if err := s.R2Service.DeleteFile(podcast.CoverURL); err != nil {
+	if podcast.CoverKey != "" {
+		fmt.Printf("Podcast - Kapak fotoğrafı silme işlemi başlatıldı. Key: %s\n", podcast.CoverKey)
+		if err := s.R2Service.DeleteFile(podcast.CoverKey); err != nil {
 			fmt.Printf("Podcast - HATA: Kapak fotoğrafı R2'den silinirken hata oluştu: %v\n", err)
 			return fmt.Errorf("kapak fotoğrafı silinirken hata oluştu: %v", err)
 		}
 		fmt.Printf("Podcast - Kapak fotoğrafı R2'den başarıyla silindi.\n")
 	} else {
-		fmt.Printf("Podcast - Kapak fotoğrafı URL'i boş, silme işlemi atlanıyor.\n")
+		fmt.Printf("Podcast - Kapak fotoğrafı Key'i boş, silme işlemi atlanıyor.\n")
 	}
 
 	fmt.Printf("Podcast - Veritabanından silme işlemi başlatılıyor. PodcastID: %d\n", id)
@@ -325,28 +360,35 @@ func (s *PodcastService) LikePodcast(podcastID, userID uint) (*dto.LikeResponse,
 }
 
 func (s *PodcastService) GetLikedPodcasts(userID uint) ([]dto.PodcastResponse, error) {
-	if _, err := s.userRepo.GetUserByID(userID); err != nil {
-		return nil, errors.New("kullanıcı bulunamadı")
-	}
-
 	podcasts, err := s.podcastRepo.GetLikedPodcasts(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	response := make([]dto.PodcastResponse, 0) // Boş array ile başla
-	for _, podcast := range *podcasts {
+	response := make([]dto.PodcastResponse, 0)
+	for _, p := range *podcasts {
+		// İmzalı URL'leri oluştur
+		audioURL, err := utils.GenerateSignedURL(p.AudioKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
+		coverURL, err := utils.GenerateSignedURL(p.CoverKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
 		response = append(response, dto.PodcastResponse{
-			ID:       podcast.ID,
-			Title:    podcast.Title,
-			Category: podcast.Category,
-			AudioURL: podcast.AudioURL,
-			CoverURL: podcast.CoverURL,
+			ID:       p.ID,
+			Title:    p.Title,
+			Category: p.Category,
+			AudioURL: audioURL,
+			CoverURL: coverURL,
 			User: dto.UserDTO{
-				ID:        podcast.User.ID,
-				FirstName: podcast.User.FirstName,
-				LastName:  podcast.User.LastName,
-				Username:  podcast.User.Username,
+				ID:        p.User.ID,
+				FirstName: p.User.FirstName,
+				LastName:  p.User.LastName,
+				Username:  p.User.Username,
 			},
 		})
 	}
@@ -359,14 +401,25 @@ func (s *PodcastService) GetPodcastsByCategory(category string) ([]dto.PodcastRe
 		return nil, err
 	}
 
-	response := make([]dto.PodcastResponse, 0) // Boş array ile başla
+	response := make([]dto.PodcastResponse, 0)
 	for _, p := range *podcasts {
+		// İmzalı URL'leri oluştur
+		audioURL, err := utils.GenerateSignedURL(p.AudioKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
+		coverURL, err := utils.GenerateSignedURL(p.CoverKey, s.config)
+		if err != nil {
+			return nil, err
+		}
+
 		response = append(response, dto.PodcastResponse{
 			ID:       p.ID,
 			Title:    p.Title,
 			Category: p.Category,
-			AudioURL: p.AudioURL,
-			CoverURL: p.CoverURL,
+			AudioURL: audioURL,
+			CoverURL: coverURL,
 			User: dto.UserDTO{
 				ID:        p.User.ID,
 				FirstName: p.User.FirstName,
@@ -430,54 +483,50 @@ func (s *PodcastService) GetComments(podcastID uint) ([]dto.CommentResponse, err
 }
 
 func (s *PodcastService) UpdatePodcastCover(id uint, userID uint, coverFile *multipart.FileHeader) (*dto.PodcastResponse, error) {
-	// Önce podcast'i getir
+	// Podcast'i bul
 	existingPodcast, err := s.podcastRepo.GetPodcastByID(id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Podcast'in sahibi olup olmadığını kontrol et
+	// Yetki kontrolü
 	if existingPodcast.UserID != userID {
 		return nil, errors.New("bu podcast'i düzenleme yetkiniz yok")
 	}
 
-	// Eski kapak fotoğrafını sil (eğer varsa)
-	if existingPodcast.CoverURL != "" {
-		oldCoverPath := filepath.Join(".", existingPodcast.CoverURL)
-		os.Remove(oldCoverPath)
+	// Eski kapak fotoğrafını sil
+	if existingPodcast.CoverKey != "" {
+		if err := s.R2Service.DeleteFile(existingPodcast.CoverKey); err != nil {
+			fmt.Printf("Podcast - HATA: Eski kapak fotoğrafı silinirken hata oluştu: %v\n", err)
+			// Hata olsa bile devam et
+		}
 	}
 
-	// Yeni kapak fotoğrafını kaydet
-	currentDir, _ := os.Getwd()
-	coverDir := filepath.Join(currentDir, "uploads", "covers")
-
-	if err := os.MkdirAll(coverDir, os.ModePerm); err != nil {
+	// Yeni kapak fotoğrafını yükle
+	newCoverKey, err := s.R2Service.UploadFile(coverFile, "covers")
+	if err != nil {
 		return nil, err
 	}
 
-	coverFileName := fmt.Sprintf("%d_%s", time.Now().Unix(), coverFile.Filename)
-	coverPath := filepath.Join(coverDir, coverFileName)
-	if err := saveFile(coverFile, coverPath); err != nil {
-		return nil, err
-	}
-
-	// URL'i güncelle - zaten / ile başlıyor
-	coverURL := fmt.Sprintf("/uploads/covers/%s", coverFileName)
-	existingPodcast.CoverURL = coverURL
+	// Podcast'i güncelle
+	existingPodcast.CoverKey = newCoverKey
 
 	// Veritabanını güncelle
-	err = s.podcastRepo.UpdatePodcast(id, existingPodcast)
-	if err != nil {
+	if err := s.podcastRepo.UpdatePodcast(id, existingPodcast); err != nil {
 		// Hata durumunda yüklenen dosyayı sil
-		os.Remove(coverPath)
+		s.R2Service.DeleteFile(newCoverKey)
 		return nil, err
 	}
 
-	// Güncellenmiş podcast'i döndür
-	// AudioURL başına / ekle (eğer yoksa)
-	audioURL := existingPodcast.AudioURL
-	if !strings.HasPrefix(audioURL, "/") {
-		audioURL = "/" + audioURL
+	// İmzalı URL'leri oluştur
+	audioURL, err := utils.GenerateSignedURL(existingPodcast.AudioKey, s.config)
+	if err != nil {
+		return nil, err
+	}
+
+	coverURL, err := utils.GenerateSignedURL(newCoverKey, s.config)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.PodcastResponse{
@@ -485,6 +534,12 @@ func (s *PodcastService) UpdatePodcastCover(id uint, userID uint, coverFile *mul
 		Title:    existingPodcast.Title,
 		Category: existingPodcast.Category,
 		AudioURL: audioURL,
-		CoverURL: existingPodcast.CoverURL,
+		CoverURL: coverURL,
+		User: dto.UserDTO{
+			ID:        existingPodcast.User.ID,
+			FirstName: existingPodcast.User.FirstName,
+			LastName:  existingPodcast.User.LastName,
+			Username:  existingPodcast.User.Username,
+		},
 	}, nil
 }
