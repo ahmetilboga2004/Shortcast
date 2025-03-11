@@ -1,9 +1,6 @@
 package router
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"shortcast/internal/container"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,18 +9,9 @@ import (
 )
 
 func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
-	currentDir, _ := os.Getwd()
-	uploadPath := filepath.Join(currentDir, "uploads")
-	fmt.Printf("Static dosya yolu: %s\n", uploadPath)
 
-	// Static middleware'i sadeleştirelim
-	app.Static("/uploads", uploadPath, fiber.Static{
-		Browse: true,
-	})
-
-	// CORS ayarlarını app seviyesinde yapalım
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000, http://localhost:8080, http://localhost:50270",
+		AllowOrigins:     "http://localhost:3000, http://localhost:8080, http://localhost:53556",
 		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		ExposeHeaders:    "Content-Length",
@@ -55,7 +43,6 @@ func SetupAPIRoutes(app *fiber.App, cont *container.Container) {
 	podcast.Get("/liked", cont.PodcastHandler.GetLikedPodcasts)
 	podcast.Get("/discover", cont.PodcastHandler.DiscoverPodcasts)
 	podcast.Get("/category/:category", cont.PodcastHandler.GetPodcastsByCategory)
-	podcast.Get("/file/*", cont.PodcastHandler.GetFileContent)
 
 	// Sonra parametreli route'ları tanımla
 	podcast.Get("/:id", cont.PodcastHandler.GetPodcastByID)

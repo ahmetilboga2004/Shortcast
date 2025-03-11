@@ -3,9 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
-	"os"
 	"shortcast/internal/config"
 	"shortcast/internal/dto"
 	"shortcast/internal/model"
@@ -90,27 +88,6 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 			Username:  user.Username,
 		},
 	}, nil
-}
-
-// Yardımcı fonksiyon
-func saveFile(file *multipart.FileHeader, path string) error {
-	src, err := file.Open()
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	dst, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer dst.Close()
-
-	if _, err = io.Copy(dst, src); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *PodcastService) GetPodcastByID(id uint) (*dto.PodcastResponse, error) {

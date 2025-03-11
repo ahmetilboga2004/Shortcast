@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"strings"
 	"time"
@@ -122,30 +121,4 @@ func (s *R2Service) GetPresignedURL(key string, expires time.Duration) (string, 
 	}
 
 	return request.URL, nil
-}
-
-// GetFile dosyanın içeriğini byte array olarak döndürür
-func (s *R2Service) GetFile(key string) ([]byte, error) {
-	fmt.Printf("R2 - Dosya okuma işlemi başlatıldı. Key: %s\n", key)
-
-	result, err := s.client.GetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: aws.String(s.bucketName),
-		Key:    aws.String(key),
-	})
-
-	if err != nil {
-		fmt.Printf("R2 - HATA: Dosya okunurken hata oluştu. Key: %s, Hata: %v\n", key, err)
-		return nil, err
-	}
-	defer result.Body.Close()
-
-	// Dosya içeriğini oku
-	body, err := io.ReadAll(result.Body)
-	if err != nil {
-		fmt.Printf("R2 - HATA: Dosya içeriği okunurken hata oluştu. Key: %s, Hata: %v\n", key, err)
-		return nil, err
-	}
-
-	fmt.Printf("R2 - Dosya başarıyla okundu. Key: %s, Boyut: %d bytes\n", key, len(body))
-	return body, nil
 }
