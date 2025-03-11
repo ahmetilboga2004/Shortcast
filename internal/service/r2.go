@@ -25,7 +25,10 @@ func NewR2Service(accountID, accessKeyID, accessKeySecret string, bucketName str
 		BaseEndpoint: aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)),
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+
 	return &R2Service{
 		client:     client,
 		bucketName: bucketName,

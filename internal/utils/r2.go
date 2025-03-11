@@ -24,7 +24,8 @@ func InitR2Client(cfg *config.Config) {
 			cfg.R2.AccessKeySecret,
 			"",
 		),
-		Region: "auto",
+		Region:       "auto",
+		BaseEndpoint: aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", cfg.R2.AccountID)),
 	}
 
 	r2Client = s3.New(s3.Options{
