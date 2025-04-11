@@ -16,6 +16,7 @@ type Container struct {
 	PodcastHandler *handler.PodcastHandler
 	AuthMiddleware *middleware.AuthMiddleware
 	R2Service      *service.R2Service
+	RedisService   *service.RedisService
 }
 
 func NewContainer() *Container {
@@ -56,7 +57,8 @@ func NewContainer() *Container {
 		cfg.R2.AccessKeySecret,
 		cfg.R2.BucketName,
 	)
-	podcastService := service.NewPodcastService(podcastRepo, userRepo, r2Service, cfg)
+	redisService := service.NewRedisService(redis)
+	podcastService := service.NewPodcastService(podcastRepo, userRepo, r2Service, redisService, cfg)
 	podcastHandler := handler.NewPodcastHandler(podcastService)
 
 	authMiddleware := middleware.NewAuthMiddleware(cfg, authRepo)
@@ -67,5 +69,6 @@ func NewContainer() *Container {
 		PodcastHandler: podcastHandler,
 		AuthMiddleware: authMiddleware,
 		R2Service:      r2Service,
+		RedisService:   redisService,
 	}
 }

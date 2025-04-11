@@ -9,22 +9,91 @@ import (
 	"shortcast/internal/model"
 	"shortcast/internal/repository"
 	"shortcast/internal/utils"
+	"time"
 )
 
 type PodcastService struct {
-	podcastRepo *repository.PodcastRepository
-	userRepo    *repository.UserRepository
-	R2Service   *R2Service
-	config      *config.Config
+	podcastRepo  *repository.PodcastRepository
+	userRepo     *repository.UserRepository
+	R2Service    *R2Service
+	RedisService *RedisService
+	config       *config.Config
 }
 
-func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service, cfg *config.Config) *PodcastService {
+func NewPodcastService(podcastRepo *repository.PodcastRepository, userRepo *repository.UserRepository, r2Service *R2Service, redisService *RedisService, cfg *config.Config) *PodcastService {
 	return &PodcastService{
-		podcastRepo: podcastRepo,
-		userRepo:    userRepo,
-		R2Service:   r2Service,
-		config:      cfg,
+		podcastRepo:  podcastRepo,
+		userRepo:     userRepo,
+		R2Service:    r2Service,
+		RedisService: redisService,
+		config:       cfg,
 	}
+}
+
+// getSignedURL, R2'den imzalı URL alır veya Redis'ten önbelleğe alınmış URL'i döndürür
+func (s *PodcastService) getSignedURL(key string) (string, error) {
+	// Önce Redis'ten kontrol et
+	cachedURL, err := s.RedisService.GetSignedURL(key)
+	if err != nil {
+		return "", fmt.Errorf("redis'ten URL alınırken hata: %v", err)
+	}
+	if cachedURL != "" {
+		return cachedURL, nil
+	}
+
+	// Redis'te yoksa R2'den al
+	url, err := utils.GenerateSignedURL(key, s.config)
+	if err != nil {
+		return "", err
+	}
+
+	// Redis'e kaydet (24 saat geçerli)
+	err = s.RedisService.SetSignedURL(key, url, 24*time.Hour)
+	if err != nil {
+		// Redis hatası kritik değil, URL'i yine de döndür
+		fmt.Printf("Redis'e URL kaydedilirken hata: %v\n", err)
+	}
+
+	return url, nil
+}
+
+// getMultipleSignedURLs, birden fazla imzalı URL alır veya Redis'ten önbelleğe alınmış URL'leri döndürür
+func (s *PodcastService) getMultipleSignedURLs(keys []string) (map[string]string, error) {
+	// Önce Redis'ten kontrol et
+	cachedURLs, err := s.RedisService.GetMultipleSignedURLs(keys)
+	if err != nil {
+		return nil, fmt.Errorf("redis'ten URL'ler alınırken hata: %v", err)
+	}
+
+	// Eksik URL'leri bul
+	missingKeys := make([]string, 0)
+	for _, key := range keys {
+		if _, exists := cachedURLs[key]; !exists {
+			missingKeys = append(missingKeys, key)
+		}
+	}
+
+	// Eksik URL'leri R2'den al
+	if len(missingKeys) > 0 {
+		missingURLs, err := utils.GenerateSignedURLs(missingKeys, s.config)
+		if err != nil {
+			return nil, err
+		}
+
+		// Redis'e kaydet (24 saat geçerli)
+		err = s.RedisService.SetMultipleSignedURLs(missingURLs, 24*time.Hour)
+		if err != nil {
+			// Redis hatası kritik değil, URL'leri yine de döndür
+			fmt.Printf("Redis'e URL'ler kaydedilirken hata: %v\n", err)
+		}
+
+		// Tüm URL'leri birleştir
+		for key, url := range missingURLs {
+			cachedURLs[key] = url
+		}
+	}
+
+	return cachedURLs, nil
 }
 
 func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, audioFile, coverFile *multipart.FileHeader) (*dto.PodcastResponse, error) {
@@ -65,12 +134,12 @@ func (s *PodcastService) UploadPodcast(podcastDTO *dto.UploadPodcastRequest, aud
 	}
 
 	// İmzalı URL'leri oluştur
-	audioURL, err := utils.GenerateSignedURL(audioKey, s.config)
+	audioURL, err := s.getSignedURL(audioKey)
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := utils.GenerateSignedURL(coverKey, s.config)
+	coverURL, err := s.getSignedURL(coverKey)
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +166,12 @@ func (s *PodcastService) GetPodcastByID(id uint) (*dto.PodcastResponse, error) {
 	}
 
 	// İmzalı URL'leri oluştur
-	audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
+	audioURL, err := s.getSignedURL(podcast.AudioKey)
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
+	coverURL, err := s.getSignedURL(podcast.CoverKey)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +200,12 @@ func (s *PodcastService) GetUserPodcasts(userID uint) ([]dto.PodcastResponse, er
 	response := make([]dto.PodcastResponse, 0)
 	for _, podcast := range *podcasts {
 		// İmzalı URL'leri oluştur
-		audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
+		audioURL, err := s.getSignedURL(podcast.AudioKey)
 		if err != nil {
 			return nil, err
 		}
 
-		coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
+		coverURL, err := s.getSignedURL(podcast.CoverKey)
 		if err != nil {
 			return nil, err
 		}
@@ -176,29 +245,29 @@ func (s *PodcastService) DiscoverPodcasts(req *dto.PodcastDiscoverRequest) (*dto
 	actualPodcasts := *podcasts
 	if hasMore {
 		actualPodcasts = actualPodcasts[:limit]
-		// Eğer daha fazla podcast varsa, next_cursor bir sonraki podcast'in ID'si olmalı
 		nextID := actualPodcasts[len(actualPodcasts)-1].ID + 1
 		response.NextCursor = &nextID
 	}
 
+	// Tüm audio ve cover key'leri topla
+	keys := make([]string, 0, len(actualPodcasts)*2)
 	for _, podcast := range actualPodcasts {
-		// İmzalı URL'leri oluştur
-		audioURL, err := utils.GenerateSignedURL(podcast.AudioKey, s.config)
-		if err != nil {
-			return nil, err
-		}
+		keys = append(keys, podcast.AudioKey, podcast.CoverKey)
+	}
 
-		coverURL, err := utils.GenerateSignedURL(podcast.CoverKey, s.config)
-		if err != nil {
-			return nil, err
-		}
+	// Tüm URL'leri tek seferde al
+	urls, err := s.getMultipleSignedURLs(keys)
+	if err != nil {
+		return nil, err
+	}
 
+	for _, podcast := range actualPodcasts {
 		response.Podcasts = append(response.Podcasts, dto.PodcastResponse{
 			ID:       podcast.ID,
 			Title:    podcast.Title,
 			Category: podcast.Category,
-			AudioURL: audioURL,
-			CoverURL: coverURL,
+			AudioURL: urls[podcast.AudioKey],
+			CoverURL: urls[podcast.CoverKey],
 			User: dto.UserDTO{
 				ID:        podcast.User.ID,
 				FirstName: podcast.User.FirstName,
@@ -236,12 +305,12 @@ func (s *PodcastService) UpdatePodcast(id uint, userID uint, req *dto.UpdatePodc
 	}
 
 	// İmzalı URL'leri oluştur
-	audioURL, err := utils.GenerateSignedURL(existingPodcast.AudioKey, s.config)
+	audioURL, err := s.getSignedURL(existingPodcast.AudioKey)
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := utils.GenerateSignedURL(existingPodcast.CoverKey, s.config)
+	coverURL, err := s.getSignedURL(existingPodcast.CoverKey)
 	if err != nil {
 		return nil, err
 	}
@@ -345,12 +414,12 @@ func (s *PodcastService) GetLikedPodcasts(userID uint) ([]dto.PodcastResponse, e
 	response := make([]dto.PodcastResponse, 0)
 	for _, p := range *podcasts {
 		// İmzalı URL'leri oluştur
-		audioURL, err := utils.GenerateSignedURL(p.AudioKey, s.config)
+		audioURL, err := s.getSignedURL(p.AudioKey)
 		if err != nil {
 			return nil, err
 		}
 
-		coverURL, err := utils.GenerateSignedURL(p.CoverKey, s.config)
+		coverURL, err := s.getSignedURL(p.CoverKey)
 		if err != nil {
 			return nil, err
 		}
@@ -378,30 +447,31 @@ func (s *PodcastService) GetPodcastsByCategory(category string) ([]dto.PodcastRe
 		return nil, err
 	}
 
+	// Tüm audio ve cover key'leri topla
+	keys := make([]string, 0, len(*podcasts)*2)
+	for _, podcast := range *podcasts {
+		keys = append(keys, podcast.AudioKey, podcast.CoverKey)
+	}
+
+	// Tüm URL'leri tek seferde al
+	urls, err := s.getMultipleSignedURLs(keys)
+	if err != nil {
+		return nil, err
+	}
+
 	response := make([]dto.PodcastResponse, 0)
-	for _, p := range *podcasts {
-		// İmzalı URL'leri oluştur
-		audioURL, err := utils.GenerateSignedURL(p.AudioKey, s.config)
-		if err != nil {
-			return nil, err
-		}
-
-		coverURL, err := utils.GenerateSignedURL(p.CoverKey, s.config)
-		if err != nil {
-			return nil, err
-		}
-
+	for _, podcast := range *podcasts {
 		response = append(response, dto.PodcastResponse{
-			ID:       p.ID,
-			Title:    p.Title,
-			Category: p.Category,
-			AudioURL: audioURL,
-			CoverURL: coverURL,
+			ID:       podcast.ID,
+			Title:    podcast.Title,
+			Category: podcast.Category,
+			AudioURL: urls[podcast.AudioKey],
+			CoverURL: urls[podcast.CoverKey],
 			User: dto.UserDTO{
-				ID:        p.User.ID,
-				FirstName: p.User.FirstName,
-				LastName:  p.User.LastName,
-				Username:  p.User.Username,
+				ID:        podcast.User.ID,
+				FirstName: podcast.User.FirstName,
+				LastName:  podcast.User.LastName,
+				Username:  podcast.User.Username,
 			},
 		})
 	}
@@ -496,12 +566,12 @@ func (s *PodcastService) UpdatePodcastCover(id uint, userID uint, coverFile *mul
 	}
 
 	// İmzalı URL'leri oluştur
-	audioURL, err := utils.GenerateSignedURL(existingPodcast.AudioKey, s.config)
+	audioURL, err := s.getSignedURL(existingPodcast.AudioKey)
 	if err != nil {
 		return nil, err
 	}
 
-	coverURL, err := utils.GenerateSignedURL(newCoverKey, s.config)
+	coverURL, err := s.getSignedURL(newCoverKey)
 	if err != nil {
 		return nil, err
 	}
